@@ -1,5 +1,7 @@
 # Setup Guide -- CursorRemote
 
+[中文](zh/setup-guide.md)
+
 ## 1. Enable CDP on Cursor IDE
 
 Cursor must be launched with the Chrome DevTools Protocol remote debugging port enabled. This is required for both extension and standalone setups.
@@ -103,6 +105,16 @@ Switch to the **Telegram** tab in the Setup Panel for a step-by-step wizard:
 
 The panel also shows registered users and their usernames.
 
+### Feishu (Extension)
+
+Switch to the **Feishu** tab in the Setup Panel. Paste the self-built app ID and secret, then restart. The panel shows a 6-digit `/bind` code (about 60 seconds, single use) and QR images. Send that code in a private chat. That chat controls the **active** Cursor window.
+
+The long connection must already be online before you save **使用长连接接收事件** in the Feishu console. Full steps: [Feishu setup](feishu_setup.md).
+
+### QQ (Extension)
+
+Switch to the **QQ** tab. Paste the official bot App ID and secret. Turn on **Sandbox** until the bot is approved, open the chat with the console's 扫码聊天 code, then send the panel's `/bind` code. Full steps and the IP allowlist: [QQ setup](qq_setup.md).
+
 ### Multi-Window Behavior
 
 Only one server instance runs across all Cursor windows:
@@ -127,7 +139,7 @@ npm install
 cp .env.example .env
 ```
 
-Edit `.env` -- the defaults work for the web client. For Telegram, set `TELEGRAM_ENABLED=true` and `TELEGRAM_BOT_TOKEN` (see section 5).
+Edit `.env` -- the defaults work for the web client. For Telegram, set `TELEGRAM_ENABLED=true` and `TELEGRAM_BOT_TOKEN` (see section 4). Feishu uses `FEISHU_*` and QQ uses `QQ_*` (see `.env.example` and section 4B).
 
 ### Start the Server
 
@@ -161,7 +173,7 @@ Set the bind address to `0.0.0.0`:
 - **Extension:** Open Setup Panel > Networking > select "LAN access (all interfaces)" > Save & Restart
 - **Standalone:** Set `SERVER_HOST=0.0.0.0` in `.env`
 
-Then open `http://<your-ip>:<port>` on your phone. A password is required.
+Then open `http://<your-ip>:<port>` on your phone. Set a web password first. If LAN is selected and the password is empty, the Setup panel warns that anyone on the network can control Cursor.
 
 ### WSL2-Specific
 
@@ -289,6 +301,27 @@ Set `TELEGRAM_ALLOWED_USERS=123456789,987654321` in `.env` (standalone) or `curs
 
 ---
 
+## 4B. Feishu and QQ (Optional)
+
+Both are off by default. The relay opens an outbound WebSocket, so the machine does not need a public webhook. Chat content still transits that platform.
+
+**Extension:** Setup Panel → Feishu or QQ tab. App secrets go into SecretStorage. Restart after saving. The tab shows the current `/bind` code.
+
+**Standalone:** set the matching block in `.env` (`FEISHU_ENABLED` / `QQ_ENABLED`, app id, app secret). For an unapproved QQ bot also set `QQ_SANDBOX=true`.
+
+| | Feishu | QQ |
+|---|---|---|
+| Console | Enterprise self-built app, long connection | Official bot, WebSocket (not webhook) |
+| Bind | `/bind` in a private chat | 扫码聊天, then `/bind` |
+| What you can do | Prompts, cards for approvals and plans | Prompts, keyboard or `/do` while the reply window is open |
+| What you cannot do yet | Group chats do not drive Cursor | Full transcript mirror (send `/status`) |
+
+Walkthroughs: [feishu_setup.md](feishu_setup.md), [qq_setup.md](qq_setup.md). QQ quotas and the IP allowlist: [qq-backlog.md](qq-backlog.md).
+
+Data files under `data/` (gitignored): `feishu-auth.json`, `feishu-sessions.json`, `qq-auth.json`, `qq-sessions.json`, plus the rotating bind JSON and QR SVGs.
+
+---
+
 ## 5. Production (Standalone)
 
 ### Option A: tmux
@@ -358,6 +391,14 @@ Ensure `data/license.key` exists before running `npm start` (no prompt in produc
 - The server tests outbound HTTPS on startup and reports if Telegram API or all HTTPS is unreachable
 - Ensure no other bot instance is running with the same token
 - The registration token is shown in the Output panel and the Setup Panel's Telegram tab
+
+#### Feishu console will not save the long-connection subscription
+- Start the relay with the app credentials first. Feishu only accepts the subscription while that connection is already online.
+- The Setup panel's Feishu tab says when the long connection is ready. Confirm that line, then save **使用长连接接收事件** again.
+
+#### QQ gateway closes with 4914
+- The bot is still sandbox-only. Enable **Sandbox** in the Setup panel (or `QQ_SANDBOX=true`) and restart. The QQ tab shows this error without opening the log.
+- If the console has an IP allowlist, add this machine's current public egress IP. The same tab reports an allowlist rejection.
 
 ### Standalone-Specific
 

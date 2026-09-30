@@ -8,6 +8,7 @@ import type { CDPBridge } from '../../cdp-bridge.js';
 import type { WindowMonitor, WindowSnapshot } from '../../window-monitor.js';
 import { cleanTabTitle } from '../../dom-extractor.js';
 import { TopicManager } from './topic-manager.js';
+import { liveTabsFromSnapshots, NOT_LIVE_NOTICE, topicLiveness } from './topic-liveness.js';
 import { MessageTracker } from '../message-tracker.js';
 import { SendQueue } from '../send-queue.js';
 import {
@@ -127,6 +128,10 @@ export abstract class BaseTelegramTransport implements Transport {
   private activityMsgIds = new Map<number, number>();
   private lastActivityText = new Map<number, string>();
   private activityTimestamps = new Map<number, number>();
+  /** One "not the live tab" notice per paused topic, so the thread does not look frozen. */
+  private pausedNoticeIds = new Map<number, number>();
+  private pausedNoticeInflight = new Set<number>();
+  private livenessChain: Promise<void> = Promise.resolve();
   private queueMsgIds = new Map<number, number>();
   private lastQueueSig = new Map<number, string>();
   protected authState: AuthState;
@@ -477,6 +482,7 @@ export abstract class BaseTelegramTransport implements Transport {
   private onWindowUpdate = (windowId: string, snapshot: WindowSnapshot): void => {
     if (!this.started || !this.syncEnabled || !this.chatId) return;
     this.processWindow(windowId, snapshot);
+    this.queueTopicLiveness();
   };
 
   private onStatePatch = (patch: Partial<CursorState>): void => {
@@ -517,6 +523,49 @@ export abstract class BaseTelegramTransport implements Transport {
       this.stopTyping();
     }
   };
+
+  private queueTopicLiveness(): void {
+    this.livenessChain = this.livenessChain
+      .then(() => this.syncTopicLiveness())
+      .catch(err => {
+        console.warn(`[telegram] Topic liveness: ${err instanceof Error ? err.message : err}`);
+      });
+  }
+
+  /** Label topics whose tab is not the one Cursor is showing. Hidden tabs are not clicked. */
+  private async syncTopicLiveness(): Promise<void> {
+    if (!this.chatId || !this.syncEnabled) return;
+    const openWindowIds = new Set(this.cdpBridge.windows.map(win => win.id));
+    const liveTabs = liveTabsFromSnapshots(this.windowMonitor.getAllSnapshots().values(), openWindowIds);
+    for (const mapping of this.topicManager.getAllMappings()) {
+      const liveness = topicLiveness(mapping, liveTabs, openWindowIds);
+      const existing = this.pausedNoticeIds.get(mapping.threadId);
+      if (liveness === 'live') {
+        if (!existing) continue;
+        this.pausedNoticeIds.delete(mapping.threadId);
+        try {
+          await this.sendQueue.enqueue(
+            () => this.api.deleteMessage(this.chatId!, existing),
+            'send',
+          );
+        } catch {
+          /* the notice may already be gone */
+        }
+        continue;
+      }
+      if (liveness !== 'paused' || existing || this.pausedNoticeInflight.has(mapping.threadId)) continue;
+      this.pausedNoticeInflight.add(mapping.threadId);
+      try {
+        const sent = await this.sendQueue.enqueue(
+          () => this.api.sendMessage(this.chatId!, NOT_LIVE_NOTICE, { message_thread_id: mapping.threadId }),
+          'send',
+        );
+        this.pausedNoticeIds.set(mapping.threadId, sent.message_id);
+      } finally {
+        this.pausedNoticeInflight.delete(mapping.threadId);
+      }
+    }
+  }
 
   // --- Message processing ---
 

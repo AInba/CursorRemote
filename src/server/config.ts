@@ -10,6 +10,16 @@ export function loadConfig(): ServerConfig {
     .map(s => parseInt(s.trim(), 10))
     .filter(n => !isNaN(n));
 
+  const feishuAllowed = (process.env.FEISHU_ALLOWED_USERS ?? '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+
+  const qqAllowed = (process.env.QQ_ALLOWED_USERS ?? '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+
   const dataDir = process.env.DATA_DIR ?? resolve(process.cwd(), 'data');
 
   return {
@@ -28,6 +38,19 @@ export function loadConfig(): ServerConfig {
       botToken: process.env.TELEGRAM_BOT_TOKEN ?? '',
       preRegisteredUsers,
       impl: (process.env.TELEGRAM_IMPL === 'raw' ? 'raw' : 'grammy') as 'grammy' | 'raw',
+    },
+    feishu: {
+      enabled: process.env.FEISHU_ENABLED === 'true',
+      appId: process.env.FEISHU_APP_ID ?? '',
+      appSecret: process.env.FEISHU_APP_SECRET ?? '',
+      preRegisteredUsers: feishuAllowed,
+    },
+    qq: {
+      enabled: process.env.QQ_ENABLED === 'true',
+      appId: process.env.QQ_APP_ID ?? '',
+      appSecret: process.env.QQ_APP_SECRET ?? '',
+      preRegisteredUsers: qqAllowed,
+      sandbox: process.env.QQ_SANDBOX === 'true',
     },
   };
 }

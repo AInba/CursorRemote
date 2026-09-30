@@ -140,6 +140,51 @@
             "raw"
           ],
           "markdownDescription": "Telegram transport implementation. Use `grammy` (default) for the Grammy framework, or `raw` for a lightweight fetch-based transport if Grammy hangs on startup."
+        },
+        "cursorRemote.feishu.enabled": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Enable the Feishu bot transport. The relay keeps a WebSocket to Feishu, so no public webhook is required. See the [Feishu setup guide](https://github.com/len5ky/CursorRemote/blob/main/docs/feishu_setup.md)."
+        },
+        "cursorRemote.feishu.appId": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Feishu self-built app ID (`cli_xxx`)."
+        },
+        "cursorRemote.feishu.appSecret": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Deprecated: the app secret is stored in VS Code SecretStorage and migrated on activation. Set it in the CursorRemote Setup panel."
+        },
+        "cursorRemote.feishu.allowedUsers": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Comma-separated Feishu open_ids that may control Cursor without scanning a bind code."
+        },
+        "cursorRemote.qq.enabled": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Enable the official QQ bot transport over WebSocket. No public webhook. See the [QQ setup guide](https://github.com/len5ky/CursorRemote/blob/main/docs/qq_setup.md)."
+        },
+        "cursorRemote.qq.appId": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "QQ bot App ID."
+        },
+        "cursorRemote.qq.appSecret": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Deprecated: the app secret is stored in VS Code SecretStorage. Set it in the CursorRemote Setup panel."
+        },
+        "cursorRemote.qq.allowedUsers": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Comma-separated QQ user_openid values that may control Cursor without a bind code."
+        },
+        "cursorRemote.qq.sandbox": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Connect to the QQ sandbox gateway. Required until the bot passes review."
         }
       }
     },
@@ -211,6 +256,28 @@
             ]
           },
           {
+            "id": "cursorRemote.walkthrough.feishu",
+            "title": "Feishu (optional)",
+            "description": "Control the active Cursor window from a Feishu private chat. Save credentials, then bind with the code on the Feishu tab.\n\n[Set Up Feishu](command:cursorRemote.openSetup)",
+            "media": {
+              "markdown": "extension/media/walkthrough/feishu.md"
+            },
+            "completionEvents": [
+              "onSettingChanged:cursorRemote.feishu.appId"
+            ]
+          },
+          {
+            "id": "cursorRemote.walkthrough.qq",
+            "title": "QQ Bot (optional)",
+            "description": "Control the active Cursor window from a QQ private chat. Sandbox stays on until the official bot is approved.\n\n[Set Up QQ](command:cursorRemote.openSetup)",
+            "media": {
+              "markdown": "extension/media/walkthrough/qq.md"
+            },
+            "completionEvents": [
+              "onSettingChanged:cursorRemote.qq.appId"
+            ]
+          },
+          {
             "id": "cursorRemote.walkthrough.done",
             "title": "Open Web Client",
             "description": "Everything is set up! Open the web client on your phone.\n\n[Open Web Client](command:cursorRemote.openWebClient)",
@@ -244,10 +311,12 @@
   },
   "dependencies": {
     "@grammyjs/auto-retry": "^2.0.2",
+    "@larksuiteoapi/node-sdk": "^1.74.0",
     "dotenv": "^17.3.1",
     "express": "^4.21.0",
     "grammy": "^1.41.1",
     "node-html-parser": "^7.1.0",
+    "qrcode": "^1.5.4",
     "socket.io": "^4.8.0",
     "ws": "^8.18.0"
   },
@@ -255,6 +324,7 @@
     "@types/express": "^5.0.0",
     "@types/jsdom": "^28.0.1",
     "@types/node": "^22.0.0",
+    "@types/qrcode": "^1.5.6",
     "@types/vscode": "^1.85.0",
     "@types/ws": "^8.5.0",
     "@vscode/vsce": "^3.0.0",

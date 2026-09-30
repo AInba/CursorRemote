@@ -10,6 +10,9 @@ import { Relay } from './relay.js';
 import type { Transport } from './transports/types.js';
 import { TelegramTransport } from './transports/telegram/index.js';
 import { RawTelegramTransport } from './transports/telegram-raw/index.js';
+import { FeishuTransport } from './transports/feishu/index.js';
+import { QqTransport } from './transports/qq/index.js';
+import { setTransportLink } from './transport-status.js';
 
 const logStream = createWriteStream('./temp/server.log', { flags: 'a' });
 const origLog = console.log;
@@ -58,6 +61,14 @@ process.on('uncaughtException', (err) => {
   setTimeout(() => process.exit(1), 100);
 });
 
+type UnbindableTransport = Transport & {
+  unbindUser(openId: string): { removed: boolean; restoredOnRestart: boolean };
+};
+
+function hasUnbindUser(item: Transport): item is UnbindableTransport {
+  return typeof (item as UnbindableTransport).unbindUser === 'function';
+}
+
 async function main(): Promise<void> {
   let version = 'unknown';
   for (const rel of ['../../package.json', '../package.json', '../../../package.json']) {
@@ -79,6 +90,8 @@ async function main(): Promise<void> {
   console.log(`[main] Poll interval: ${config.pollIntervalMs}ms`);
   console.log(`[main] Debounce: ${config.debounceMs}ms`);
   console.log(`[main] Telegram: ${config.telegram.enabled ? 'enabled' : 'disabled'}`);
+  console.log(`[main] Feishu: ${config.feishu.enabled ? 'enabled' : 'disabled'}`);
+  console.log(`[main] QQ: ${config.qq.enabled ? 'enabled' : 'disabled'}${config.qq.sandbox ? ' (sandbox)' : ''}`);
   console.log();
 
   const stateManager = new StateManager(config.debounceMs);
@@ -151,6 +164,52 @@ async function main(): Promise<void> {
     });
     transports.push(telegram);
   }
+
+  if (config.feishu.enabled && config.feishu.appId && config.feishu.appSecret) {
+    const feishu = new FeishuTransport(
+      config.feishu,
+      config.dataDir,
+      windowMonitor,
+      stateManager,
+      commandExecutor,
+      cdpBridge,
+    );
+    feishu.start().catch(err => {
+      const message = err instanceof Error ? err.message : String(err);
+      setTransportLink('feishu', 'error', message);
+      console.error(`[feishu] Failed to start: ${message}`);
+    });
+    transports.push(feishu);
+  } else if (config.feishu.enabled) {
+    setTransportLink('feishu', 'error', '已启用，但缺少 App ID 或 App Secret');
+    console.warn('[feishu] Enabled but FEISHU_APP_ID or FEISHU_APP_SECRET is missing');
+  }
+
+  if (config.qq.enabled && config.qq.appId && config.qq.appSecret) {
+    const qq = new QqTransport(
+      config.qq,
+      config.dataDir,
+      windowMonitor,
+      stateManager,
+      commandExecutor,
+      cdpBridge,
+    );
+    qq.start().catch(err => {
+      const message = err instanceof Error ? err.message : String(err);
+      setTransportLink('qq', 'error', message);
+      console.error(`[qq] Failed to start: ${message}`);
+    });
+    transports.push(qq);
+  } else if (config.qq.enabled) {
+    setTransportLink('qq', 'error', '已启用，但缺少 App ID 或 App Secret');
+    console.warn('[qq] Enabled but QQ_APP_ID or QQ_APP_SECRET is missing');
+  }
+
+  relay.setLocalUnbind((transport, openId) => {
+    const target = transports.find(item => item.name === transport);
+    if (target && hasUnbindUser(target)) return target.unbindUser(openId);
+    return { removed: false, restoredOnRestart: false };
+  });
 
   windowMonitor.start();
 

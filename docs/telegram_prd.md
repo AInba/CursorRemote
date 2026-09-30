@@ -254,6 +254,8 @@ Plain text sent in a topic is forwarded as a message to the Cursor agent mapped 
 
 The Telegram group is a supergroup with forum topics enabled. Each topic represents one `window + chat tab` combination.
 
+A topic stays current while its tab is the one Cursor is showing in that window. Other open windows refresh their current tab in the background, without switching the IDE. A topic for a tab that is not in front gets one notice: it is not the live tab, and it updates when that tab is opened. `/status` inside that topic says the same. Hidden tabs are not clicked, because that would change the chat on screen.
+
 Topic name format: `{project} — {tab title}`
 
 Example topics:

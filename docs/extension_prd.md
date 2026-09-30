@@ -1,8 +1,10 @@
 # CursorRemote — Extension PRD
 
+[中文](zh/extension_prd.md)
+
 ## 1. Overview
 
-Package the CursorRemote relay server as a VS Code / Cursor extension. The extension wraps the server as a managed child process and provides native editor integration: settings UI, setup wizard, status bar, output channel, sidebar tree view, license management, and multi-window coordination. The server code, web client, and Telegram transport are bundled into the extension and run as a single child process. The bundled **web client** renders assistant **`codeBlocks`** and tool **`diffBlock`** as native code/diff UI (~7-line scroll viewport, full-screen reader, mobile touch targets; see `docs/prd.md` §6.11 and `docs/architecture.md` §2.6).
+Package the CursorRemote relay server as a VS Code / Cursor extension. The extension wraps the server as a managed child process and provides native editor integration: settings UI, setup wizard, status bar, output channel, sidebar tree view, license management, and multi-window coordination. The server code, web client, and Telegram, Feishu, and QQ transports are bundled into the extension and run as a single child process. The bundled **web client** renders assistant **`codeBlocks`** and tool **`diffBlock`** as native code/diff UI (~7-line scroll viewport, full-screen reader, mobile touch targets; see `docs/prd.md` §6.11 and `docs/architecture.md` §2.6).
 
 ### 1.1 Problem Statement
 
@@ -15,7 +17,7 @@ Ship a VS Code / Cursor extension that:
 - Installs from a `.vsix` file (marketplace listing planned)
 - Manages the relay server lifecycle (start/stop/restart) automatically
 - Provides all configuration via VS Code Settings (no `.env` file needed)
-- Offers an interactive Setup Panel for networking, password, and Telegram configuration
+- Offers an interactive Setup Panel for networking, password, Telegram, Feishu, and QQ configuration
 - Shows server and CDP connection status in the status bar and sidebar
 - Pipes server logs to a LogOutputChannel with built-in level filtering
 - Displays agent status, windows, and quick actions in a sidebar tree view with Start/Stop controls
@@ -39,13 +41,13 @@ Ship a VS Code / Cursor extension that:
 **As a** Cursor user, **I want to** install the extension from a `.vsix` file, enter my license key, and have the server running, **so that** I don't need to clone a repo, install dependencies, or edit config files.
 
 ### US-2: Auto-Start
-**As a** developer, **I want** the relay server to start automatically when Cursor launches, **so that** my phone client and Telegram bot are always available without manual intervention.
+**As a** developer, **I want** the relay server to start automatically when Cursor launches, **so that** my phone client and any enabled chat bot are always available without manual intervention.
 
 ### US-3: Settings UI
-**As a** developer, **I want to** configure CDP URL, server port, Telegram settings, and other options in VS Code Settings with inline documentation links, **so that** I don't need to edit `.env` files.
+**As a** developer, **I want to** configure CDP URL, server port, Telegram, Feishu, and QQ settings, and other options in VS Code Settings with inline documentation links, **so that** I don't need to edit `.env` files.
 
 ### US-4: Setup Wizard
-**As a** new user, **I want** an interactive Setup Panel that walks me through networking, password, and Telegram configuration, **so that** I can get started without reading documentation.
+**As a** new user, **I want** an interactive Setup Panel that walks me through networking, password, Telegram, Feishu, and QQ configuration, **so that** I can get started without reading documentation.
 
 ### US-5: Status Visibility
 **As a** developer, **I want to** see server status, CDP connection, agent activity, and connected clients in the sidebar and status bar, **so that** I know the system is working at a glance.
@@ -97,7 +99,7 @@ Only one server process runs across all Cursor windows:
 | `cursorRemote.stop` | CursorRemote: Stop Server | Stop the relay server |
 | `cursorRemote.restart` | CursorRemote: Restart Server | Restart the relay server |
 | `cursorRemote.openWebClient` | CursorRemote: Open Web Client | Open the browser client URL |
-| `cursorRemote.openSetup` | CursorRemote: Open Setup Panel | Open the networking and Telegram setup wizard |
+| `cursorRemote.openSetup` | CursorRemote: Open Setup Panel | Open the networking, Telegram, Feishu, and QQ setup wizard |
 | `cursorRemote.showLogs` | CursorRemote: Show Logs | Show the Output Channel |
 | `cursorRemote.enterLicenseKey` | CursorRemote: Enter License Key | Prompt for a license key |
 | `cursorRemote.buyLicense` | CursorRemote: Buy License | Open the store URL (with UTM tags) |
@@ -122,11 +124,21 @@ All settings are under the `cursorRemote` namespace. Each maps 1:1 to a server e
 | `cursorRemote.telegram.enabled` | boolean | `false` | `TELEGRAM_ENABLED` | Enable Telegram |
 | `cursorRemote.telegram.botToken` | string | `""` | `TELEGRAM_BOT_TOKEN` | Bot token |
 | `cursorRemote.telegram.allowedUsers` | string | `""` | `TELEGRAM_ALLOWED_USERS` | Comma-separated IDs |
+| `cursorRemote.feishu.enabled` | boolean | `false` | `FEISHU_ENABLED` | Enable Feishu long connection |
+| `cursorRemote.feishu.appId` | string | `""` | `FEISHU_APP_ID` | Self-built app ID |
+| `cursorRemote.feishu.appSecret` | string | `""` | `FEISHU_APP_SECRET` | Deprecated. SecretStorage via Setup panel |
+| `cursorRemote.feishu.allowedUsers` | string | `""` | `FEISHU_ALLOWED_USERS` | open_ids that skip `/bind` |
+| `cursorRemote.qq.enabled` | boolean | `false` | `QQ_ENABLED` | Enable official QQ bot |
+| `cursorRemote.qq.appId` | string | `""` | `QQ_APP_ID` | Bot App ID |
+| `cursorRemote.qq.appSecret` | string | `""` | `QQ_APP_SECRET` | Deprecated. SecretStorage via Setup panel |
+| `cursorRemote.qq.allowedUsers` | string | `""` | `QQ_ALLOWED_USERS` | openids that skip `/bind` |
+| `cursorRemote.qq.sandbox` | boolean | `false` | `QQ_SANDBOX` | Sandbox gateway until approval |
 
 ### 5.1 Security Defaults
 
 - `serverHost` defaults to `127.0.0.1` (not `0.0.0.0`) so the server is never exposed to the network until the user explicitly opts in via the Setup Panel
 - `webappPassword` is auto-generated on first activation using `crypto.randomBytes(24)` and stored in VS Code Settings. The user is shown a non-blocking notification with a "Copy to Clipboard" action.
+- Feishu and QQ app secrets follow the Telegram token path: the Setup panel writes SecretStorage (`cursorRemote.feishu.appSecret`, `cursorRemote.qq.appSecret`). A plaintext settings value is migrated into SecretStorage on activation and then cleared.
 
 ---
 
@@ -179,12 +191,13 @@ Refreshed on health poll events and server state changes.
 
 ## 8. Setup Panel (WebviewPanel)
 
-Interactive configuration wizard opened via `cursorRemote.openSetup`. Created in `ViewColumn.One` with `retainContextWhenHidden: true`.
+Interactive configuration wizard opened via `cursorRemote.openSetup`. Created in `ViewColumn.One` with `retainContextWhenHidden: true`. Labels follow `vscode.env.language`: a language starting with `zh` uses Chinese and links Feishu, QQ, and the install notes to `docs/zh/`. Other languages stay English.
 
 ### Networking Tab
 - **Radio group**: Localhost / LAN / Specific address (Tailscale/custom)
 - Custom address text input (shown when "Specific address" selected)
 - **Save & Restart** button — updates settings and restarts server
+- When LAN (`0.0.0.0`) is selected and the web password is empty, a warning says anyone on the network can control Cursor. It appears before save, and again as an editor warning when that combination is saved.
 - Tailscale documentation link
 
 ### Password Section
@@ -197,6 +210,20 @@ Interactive configuration wizard opened via `cursorRemote.openSetup`. Created in
 - **Step 2: Create Supergroup** — instructions for Topics and admin setup
 - **Step 3: Register** — displays the actual `/register <token>` command from `telegram-auth.json`, copyable. Shows registered users and usernames.
 - **Step 4: Sync** — instructions to send `/sync`
+
+### Feishu Tab
+- App ID and App Secret. The secret is masked once stored.
+- Rotating `/bind` code, refreshed from the server about every 15 seconds, plus QR images for the applink and the bind command.
+- A line that says whether the long connection is actually up. Saving the secret alone does not mark the bot connected.
+- Allowed open_ids that skip `/bind`.
+- Each bound account has a Remove button. A running relay drops it immediately. If the relay is down, the local record is deleted for the next start. Allow-list ids return on the next start, and the panel says so.
+
+### QQ Tab
+- App ID, App Secret, and a Sandbox checkbox.
+- Rotating `/bind` code and a QR of that command. The user still opens the bot with the QQ console 扫码聊天 code.
+- A line for gateway ready, sandbox-only `4914`, or an IP allowlist rejection.
+- Allowed `user_openid` values that skip `/bind`.
+- Each bound account has a Remove button, with the same immediate-or-next-start behavior as Feishu.
 
 ### Footer
 - **Open All Settings** button — disposes the webview panel first, then opens VS Code Settings filtered to `@ext:cursor-remote.cursor-remote` on a deferred tick (avoids Cursor renderer freeze from retained webview + settings editor conflict)
@@ -224,7 +251,9 @@ A `contributes.walkthroughs` entry provides a step-by-step onboarding flow:
 2. **Verify CDP Connection** — instructions for `--remote-debugging-port=9222`, start server command
 3. **Configure Networking** — open Setup Panel command
 4. **Set Up Telegram** — optional, open Setup Panel command
-5. **Done** — summary with link to documentation
+5. **Set Up Feishu** — optional. Completes when `cursorRemote.feishu.appId` changes. Steps: `docs/feishu_setup.md` (`docs/zh/feishu_setup.md`)
+6. **Set Up QQ** — optional. Completes when `cursorRemote.qq.appId` changes. Steps: `docs/qq_setup.md` (`docs/zh/qq_setup.md`)
+7. **Done** — summary with link to documentation
 
 ---
 

@@ -1,4 +1,5 @@
 /* global io */
+import { clientNoticeCopy, codeBlockPainted, connectionUi, emptyCodeNote, nextClientNotice } from './ui-copy.js';
 
 (function () {
   'use strict';
@@ -363,57 +364,12 @@
   }
 
   function getConnectionUiState() {
-    const lastError = (state.lastExtractionError || '').trim();
-    const timeoutLike = /timeout/i.test(lastError);
-
-    if (!socket.connected) {
-      return {
-        status: 'disconnected',
-        label: 'Relay disconnected',
-        emptyPrimary: 'Waiting for relay connection...',
-        emptyHint: 'Check that this page can reach the CursorRemote server.',
-      };
-    }
-
-    if (!state.connected) {
-      return {
-        status: 'reconnecting',
-        label: 'Waiting for Cursor',
-        emptyPrimary: 'Connecting to Cursor IDE...',
-        emptyHint: 'Make sure Cursor is running with<br><code>--remote-debugging-port=9222</code>',
-      };
-    }
-
-    if (state.extractorStatus === 'stale') {
-      return {
-        status: 'reconnecting',
-        label: timeoutLike ? 'Cursor backgrounded' : 'Cursor stalled',
-        emptyPrimary: timeoutLike
-          ? 'Cursor is connected but background-throttled.'
-          : 'Cursor is connected but extraction is failing.',
-        emptyHint: timeoutLike
-          ? 'Bring Cursor to the foreground on macOS, then wait for the next snapshot.'
-          : ('Last extractor error:<br><code>' + escapeHtml(lastError || 'unknown error') + '</code>'),
-      };
-    }
-
-    if (state.extractorStatus === 'waiting') {
-      return {
-        status: 'reconnecting',
-        label: 'Waiting for snapshot',
-        emptyPrimary: 'Connected to Cursor, waiting for the first snapshot...',
-        emptyHint: lastError
-          ? ('Last extractor error:<br><code>' + escapeHtml(lastError) + '</code>')
-          : 'The relay is connected to Cursor but has not captured a fresh DOM snapshot yet.',
-      };
-    }
-
-    return {
-      status: 'connected',
-      label: 'Connected',
-      emptyPrimary: 'No messages in this chat yet.',
-      emptyHint: 'Send a message below or switch chat tab / window in Cursor.',
-    };
+    return connectionUi({
+      socketConnected: socket.connected,
+      cursorConnected: state.connected,
+      extractorStatus: state.extractorStatus,
+      lastExtractionError: state.lastExtractionError,
+    });
   }
 
   function renderAgentStatus() {
@@ -721,7 +677,7 @@
       e.stopPropagation();
       openCodeBlockFullscreen(wrapper);
     });
-    toolbar.appendChild(expandBtn);
+    if (codeBlockPainted(item)) toolbar.appendChild(expandBtn);
     wrapper.appendChild(toolbar);
 
     const viewport = document.createElement('div');
@@ -737,6 +693,11 @@
         row.textContent = line.text;
         body.appendChild(row);
       }
+    } else if (!codeBlockPainted(item)) {
+      const note = document.createElement('p');
+      note.className = 'code-block-pending';
+      note.textContent = emptyCodeNote;
+      body.appendChild(note);
     } else {
       const pre = document.createElement('pre');
       const code = document.createElement('code');
@@ -755,7 +716,7 @@
     bubble.querySelectorAll(':scope > .native-code-block').forEach((n) => n.remove());
     if (!msg.codeBlocks?.length) return;
     for (const item of msg.codeBlocks) {
-      if (!item || (!item.code?.trim() && !(item.diffLines && item.diffLines.length))) continue;
+      if (!item) continue;
       bubble.appendChild(createNativeBlockFromItem(item));
     }
   }
@@ -879,12 +840,9 @@
   /** Tool edit diff: native block from `diffBlock` (structured lines). */
   function syncToolDiffHost(el, msg) {
     const db = msg.diffBlock;
-    const hasBody =
-      db &&
-      ((db.diffLines && db.diffLines.length > 0) || (db.code && String(db.code).trim().length > 0));
     let host = el.querySelector('.tool-diff-host');
 
-    if (!hasBody) {
+    if (!db) {
       if (host) {
         delete host._nativeDiffKey;
         host.remove();
@@ -1600,16 +1558,10 @@
 
   function fireNotification(text, tag) {
     if (document.hasFocus()) return;
-    if (typeof Notification === 'undefined') return;
+    if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
     var ntag = tag || 'cursor-agent';
-    if (notificationPermission === 'default') {
-      Notification.requestPermission().then(function (perm) {
-        notificationPermission = perm;
-        if (perm === 'granted') new Notification('CursorRemote', { body: text, tag: ntag });
-      });
-    } else if (notificationPermission === 'granted') {
-      new Notification('CursorRemote', { body: text, tag: ntag });
-    }
+    notificationPermission = 'granted';
+    new Notification('CursorRemote', { body: text, tag: ntag });
   }
 
   function checkMessagesForNotifications() {
@@ -1900,6 +1852,91 @@
       $sheetPlanModelList.appendChild(btn);
     });
   }
+
+  const $clientNotice = document.getElementById('client-notice');
+  const $clientNoticeText = document.getElementById('client-notice-text');
+  const $clientNoticePrimary = document.getElementById('client-notice-primary');
+  const $clientNoticeDismiss = document.getElementById('client-notice-dismiss');
+  let deferredInstall = null;
+
+  function noticeFlags() {
+    const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+    return {
+      secure: window.isSecureContext === true,
+      notificationPermission: typeof Notification === 'undefined' ? 'unsupported' : Notification.permission,
+      notifyDismissed: localStorage.getItem('cursor-remote-notify-dismissed') === '1',
+      installDismissed: localStorage.getItem('cursor-remote-install-dismissed') === '1',
+      insecureDismissed: localStorage.getItem('cursor-remote-insecure-dismissed') === '1',
+      canInstall: deferredInstall !== null,
+      ios: /iPad|iPhone|iPod/.test(navigator.userAgent),
+      standalone,
+    };
+  }
+
+  function renderClientNotice() {
+    if (!$clientNotice || !$clientNoticeText) return;
+    const kind = nextClientNotice(noticeFlags());
+    if (!kind) {
+      $clientNotice.classList.add('hidden');
+      return;
+    }
+    const copy = clientNoticeCopy;
+    const text = {
+      notify: copy.notify,
+      denied: copy.denied,
+      insecure: copy.insecure,
+      install: copy.install,
+      'install-ios': copy.installIos,
+    }[kind];
+    $clientNoticeText.textContent = text;
+    const showPrimary = kind === 'notify' || kind === 'install';
+    $clientNoticePrimary.classList.toggle('hidden', !showPrimary);
+    $clientNoticePrimary.textContent = kind === 'install' ? copy.installButton : copy.allow;
+    $clientNoticeDismiss.textContent = copy.later;
+    $clientNotice.classList.remove('hidden');
+    $clientNotice.dataset.kind = kind;
+  }
+
+  $clientNoticePrimary?.addEventListener('click', () => {
+    const kind = $clientNotice?.dataset.kind;
+    if (kind === 'notify' && typeof Notification !== 'undefined') {
+      Notification.requestPermission().then((perm) => {
+        notificationPermission = perm;
+        renderClientNotice();
+      });
+      return;
+    }
+    if (kind === 'install' && deferredInstall) {
+      const prompt = deferredInstall;
+      deferredInstall = null;
+      prompt.prompt();
+      prompt.userChoice.finally(() => {
+        localStorage.setItem('cursor-remote-install-dismissed', '1');
+        renderClientNotice();
+      });
+    }
+  });
+
+  $clientNoticeDismiss?.addEventListener('click', () => {
+    const kind = $clientNotice?.dataset.kind;
+    if (kind === 'insecure') localStorage.setItem('cursor-remote-insecure-dismissed', '1');
+    else if (kind === 'install' || kind === 'install-ios') localStorage.setItem('cursor-remote-install-dismissed', '1');
+    else localStorage.setItem('cursor-remote-notify-dismissed', '1');
+    renderClientNotice();
+  });
+
+  window.addEventListener('beforeinstallprompt', (event) => {
+    event.preventDefault();
+    deferredInstall = event;
+    renderClientNotice();
+  });
+
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  }
+
+  if (typeof Notification !== 'undefined') notificationPermission = Notification.permission;
+  renderClientNotice();
 
   function showToast(message, type) {
     const toast = document.createElement('div');

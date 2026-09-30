@@ -16,6 +16,8 @@ import {
   parseSessionCookie,
   type WebappSessionStore,
 } from './webapp-sessions.js';
+import { getTransportLinks } from './transport-status.js';
+import { isLocalPeer } from './loopback.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -117,6 +119,10 @@ export class Relay {
   private cdpBridge: CDPBridge;
 
   private sessionStore: WebappSessionStore;
+  private localUnbind: (
+    transport: 'feishu' | 'qq',
+    openId: string,
+  ) => { removed: boolean; restoredOnRestart: boolean } = () => ({ removed: false, restoredOnRestart: false });
   private loginAttempts = new Map<string, RateLimitEntry>();
 
   /** Max-Age for session cookie (30 days), aligned with typical “stay signed in” expectation. */
@@ -156,6 +162,12 @@ export class Relay {
     if (this.authEnabled) {
       console.log('[relay] Web app password protection enabled');
     }
+  }
+
+  setLocalUnbind(
+    handler: (transport: 'feishu' | 'qq', openId: string) => { removed: boolean; restoredOnRestart: boolean },
+  ): void {
+    this.localUnbind = handler;
   }
 
   start(): Promise<void> {
@@ -298,7 +310,22 @@ export class Relay {
         chatTabCount: state.chatTabs?.length ?? 0,
         pendingApprovalCount: state.pendingApprovals?.length ?? 0,
         generation: this.stateManager.generation,
+        transports: getTransportLinks(),
       });
+    });
+
+    this.app.post('/local/unbind', (req, res) => {
+      if (!isLocalPeer(req.socket.remoteAddress, req.socket.localAddress)) {
+        res.status(403).json({ error: 'local only' });
+        return;
+      }
+      const transport = req.body?.transport;
+      const openId = typeof req.body?.openId === 'string' ? req.body.openId.trim() : '';
+      if ((transport !== 'feishu' && transport !== 'qq') || !openId) {
+        res.status(400).json({ error: 'transport and openId are required' });
+        return;
+      }
+      res.json(this.localUnbind(transport, openId));
     });
 
     this.app.get('/debug/state', (req, res) => {
@@ -348,8 +375,11 @@ export class Relay {
     this.app.use(express.static(clientDir, {
       etag: true,
       lastModified: true,
-      setHeaders: (res) => {
+      setHeaders: (res, filePath) => {
         res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+        if (String(filePath).endsWith('.webmanifest')) {
+          res.setHeader('Content-Type', 'application/manifest+json');
+        }
       },
     }));
 

@@ -1,6 +1,8 @@
 # CursorRemote
 
-Remote control for your local Cursor AI agent — monitor sessions, approve steps, inspect full plans, and send tasks from your phone, tablet, or another computer's browser, or via Telegram, while Cursor runs on your machine.
+[中文](README.zh-CN.md)
+
+Remote control for your local Cursor AI agent — monitor sessions, approve steps, inspect full plans, and send tasks from your phone, tablet, or another computer's browser, or via Telegram, Feishu, or QQ, while Cursor runs on your machine.
 
 <div align="center">
 
@@ -17,6 +19,8 @@ Remote control for your local Cursor AI agent — monitor sessions, approve step
 
 - **Mobile Web Client** -- real-time chat view with Cursor's dark theme, approve/reject buttons, full plan modal, plan model picker, run command cards, mode/model switching
 - **Telegram Integration** -- auto-sync conversations into forum topics, approve via inline buttons, send prompts from any device
+- **Feishu** -- long-connection bot (no public webhook). Private chat controls the active Cursor window; approvals and plans arrive as cards. Scan a bind code from the Setup panel.
+- **QQ official bot** -- WebSocket gateway, same private-chat control. Replies ride your latest message because QQ limits proactive pushes.
 - **Multi-Window Monitoring** -- all Cursor windows polled in parallel via separate CDP connections (no UI switching)
 - **Auto-Topic Creation** -- new chat tabs automatically get a Telegram topic created
 - **VS Code Extension** -- integrated sidebar with server status, start/stop controls, setup wizard, and settings
@@ -31,6 +35,7 @@ Remote control for your local Cursor AI agent — monitor sessions, approve step
 │                                                                 │
 │  Cursor IDE  ──CDP──>  Relay Server  ──socket.io──>  Browser    │
 │  (Windows/Mac)          (Node.js)     ──Bot API───>  Telegram   │
+│                                 ──WS──>  Feishu / QQ            │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -39,6 +44,7 @@ Remote control for your local Cursor AI agent — monitor sessions, approve step
 3. **Window Monitor** polls all windows in parallel using separate CDP connections
 4. **Browser Client** displays the conversation in real time on any device
 5. **Telegram Bot** (optional) mirrors data into auto-created forum topics
+6. **Feishu or QQ** (optional) connects outbound to that platform. No public webhook on your machine. A private chat controls the active Cursor window after a one-time `/bind` code.
 
 ## Which Setup Should I Use?
 
@@ -113,6 +119,7 @@ Run **CursorRemote: Open Setup Panel** (or click **Open Setup Panel** in the sid
 - **Networking** -- choose Localhost (default), LAN (all interfaces), or a specific IP (Tailscale)
 - **Web Client Password** -- auto-generated on first install; copy it or set your own
 - **Telegram** -- step-by-step wizard with bot token entry, registration token display, and user status
+- **Feishu / QQ** -- app credentials, a rotating `/bind` code, and a QR of that command. See [Feishu setup](docs/feishu_setup.md) and [QQ setup](docs/qq_setup.md).
 
 Open `http://<server-ip>:<port>` in any browser on your phone, tablet, or another computer and enter the password.
 
@@ -126,7 +133,7 @@ Open `http://<server-ip>:<port>` in any browser on your phone, tablet, or anothe
 | `CursorRemote: Stop Server` | Stop the relay server |
 | `CursorRemote: Restart Server` | Restart the relay server |
 | `CursorRemote: Open Web Client` | Open the browser client URL |
-| `CursorRemote: Open Setup Panel` | Open the networking and Telegram setup wizard |
+| `CursorRemote: Open Setup Panel` | Open the networking, Telegram, Feishu, and QQ setup wizard |
 | `CursorRemote: Show Logs` | Show server logs in Output panel |
 | `CursorRemote: Enter License Key` | Enter and store a license key |
 | `CursorRemote: Buy License` | Open the store URL |
@@ -147,8 +154,16 @@ All settings are under `cursorRemote.*` in VS Code Settings. Each setting includ
 | `webappPassword` | *(auto-generated)* | Password for the web client |
 | `windowTitleQualifier` | `true` | Include remote qualifier in titles |
 | `telegram.enabled` | `false` | Enable Telegram bot |
-| `telegram.botToken` | -- | Bot token from @BotFather |
+| `telegram.botToken` | -- | Deprecated. The token is stored in SecretStorage via the Setup panel. |
 | `telegram.allowedUsers` | -- | Comma-separated allowed user IDs |
+| `feishu.enabled` | `false` | Enable the Feishu long-connection bot |
+| `feishu.appId` | -- | Feishu self-built app ID (`cli_xxx`) |
+| `feishu.appSecret` | -- | Stored in SecretStorage; leave the setting blank |
+| `feishu.allowedUsers` | -- | Comma-separated open_ids that skip `/bind` |
+| `qq.enabled` | `false` | Enable the official QQ bot |
+| `qq.appId` / `qq.appSecret` | -- | App ID in settings; secret in SecretStorage |
+| `qq.sandbox` | `false` | Use the QQ sandbox gateway until the bot is approved |
+| `qq.allowedUsers` | -- | Comma-separated `user_openid` values that skip `/bind` |
 
 ---
 
@@ -174,7 +189,7 @@ npm run dev
 
 On first run, you'll be prompted for a **license key**. Get one from the [store](https://cursor-remote.com/buy?utm_source=github&utm_medium=readme_standalone&utm_campaign=license). The key is saved to `data/license.key`.
 
-Edit `.env` to configure the server. For Telegram, set `TELEGRAM_ENABLED=true` and `TELEGRAM_BOT_TOKEN`.
+Edit `.env` to configure the server. For Telegram, set `TELEGRAM_ENABLED=true` and `TELEGRAM_BOT_TOKEN`. Feishu uses `FEISHU_*` and QQ uses `QQ_*` (see `.env.example`).
 
 ### Standalone Configuration
 
@@ -190,6 +205,13 @@ Edit `.env` to configure the server. For Telegram, set `TELEGRAM_ENABLED=true` a
 | `TELEGRAM_ENABLED` | `false` | Enable Telegram bot |
 | `TELEGRAM_BOT_TOKEN` | -- | Bot token from @BotFather |
 | `TELEGRAM_ALLOWED_USERS` | -- | Comma-separated allowed user IDs |
+| `FEISHU_ENABLED` | `false` | Enable Feishu long connection |
+| `FEISHU_APP_ID` / `FEISHU_APP_SECRET` | -- | Feishu self-built app credentials |
+| `FEISHU_ALLOWED_USERS` | -- | Comma-separated open_ids that skip `/bind` |
+| `QQ_ENABLED` | `false` | Enable the official QQ bot |
+| `QQ_APP_ID` / `QQ_APP_SECRET` | -- | QQ bot credentials |
+| `QQ_SANDBOX` | `false` | Sandbox gateway until the bot is approved |
+| `QQ_ALLOWED_USERS` | -- | Comma-separated QQ `user_openid` values |
 | `LICENSE_KEY` | -- | License key via env (overrides file) |
 | `DATA_DIR` | `./data` | Data directory for persistent state |
 | `LOG_FORMAT` | `text` | Set to `json` for structured log lines |
@@ -225,7 +247,9 @@ Both options can be combined for defense in depth.
 
 ## Privacy
 
-CursorRemote is **100% self-hosted**. There is no phone-home, no telemetry, no analytics, no usage tracking. The software never connects to our servers — not at startup, not during use, not ever. License validation happens entirely offline against your local key. Your code, your conversations, and your agent activity stay on your machine and your network. We don't see any of it.
+CursorRemote is **100% self-hosted**. There is no phone-home, no telemetry, no analytics, no usage tracking. The software never connects to our servers — not at startup, not during use, not ever. License validation happens entirely offline against your local key. We don't see any of it.
+
+The web client stays on your machine and your network. If you turn on Telegram, Feishu, or QQ, the messages you send through that bot also transit that platform's servers. The relay itself still runs locally and does not need a public webhook.
 
 ## Telegram Setup
 
@@ -258,6 +282,19 @@ The easiest way to set up Telegram is via the **Setup Panel** — run **CursorRe
 
 Plain text in any topic is sent as a prompt to the mapped Cursor agent.
 
+## Feishu and QQ
+
+Both are optional and off by default. The relay opens an outbound WebSocket to the platform, so your machine does not need a public IP or ngrok. After you save credentials in the Setup panel and restart, send the rotating `/bind` code in a private chat. That chat then controls the **active** Cursor window.
+
+| | Feishu | QQ |
+|---|---|---|
+| Setup | [docs/feishu_setup.md](docs/feishu_setup.md) | [docs/qq_setup.md](docs/qq_setup.md) |
+| Chat | Private chat. Group chats can bind, but do not drive Cursor yet. | Private chat only |
+| Approvals | Interactive cards, including Run / Skip and plan Build | Keyboard buttons on your latest message, or `/do <id>` |
+| Transcript | Status plus new and edited messages | Not fully mirrored. Send `/status`. QQ limits proactive pushes. |
+
+QQ bots that are not approved yet need **Sandbox** (`qq.sandbox` / `QQ_SANDBOX=true`) and the console's 扫码聊天 code. If the console requires an IP allowlist, add this machine's public egress IP.
+
 ## Scripts
 
 | Command | Description |
@@ -273,10 +310,14 @@ Plain text in any topic is sent as a prompt to the mapped Cursor agent.
 
 ## Documentation
 
-- [Setup Guide](docs/setup-guide.md) -- installation, networking, Telegram, troubleshooting
+- [中文文档](docs/zh/README.md) -- 安装、飞书、QQ 与产品说明的中文版
+- [Product plan](docs/product-plan.md) -- usability work still in progress
+- [Setup Guide](docs/setup-guide.md) -- installation, networking, Telegram, Feishu, QQ, troubleshooting
 - [Tailscale Setup](docs/tailscale-setup.md) -- secure remote access without exposing to the internet
 - [Product Requirements](docs/prd.md) -- features, state model, protocol
 - [Architecture](docs/architecture.md) -- components, data flow, decisions
 - [Telegram PRD](docs/telegram_prd.md) -- message formats, commands
 - [Telegram Architecture](docs/telegram_architecture.md) -- multi-window, queues, lifecycle
+- [Feishu setup](docs/feishu_setup.md) -- self-built app, long connection, `/bind`
+- [QQ setup](docs/qq_setup.md) -- official bot, sandbox, IP allowlist, `/bind`
 - [Extension PRD](docs/extension_prd.md) -- VS Code extension features, settings, build

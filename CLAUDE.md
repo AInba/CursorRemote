@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-CursorRemote — a VS Code/Cursor extension + Node.js relay server that connects to Cursor IDE via Chrome DevTools Protocol (CDP), extracts agent chat state from the DOM, and streams it to a mobile web client (socket.io) and/or Telegram bot. Users monitor and control their Cursor AI agent remotely.
+CursorRemote — a VS Code/Cursor extension + Node.js relay server that connects to Cursor IDE via Chrome DevTools Protocol (CDP), extracts agent chat state from the DOM, and streams it to a mobile web client (socket.io) and optional Telegram, Feishu, and QQ bots. Users monitor and control their Cursor AI agent remotely.
 
 ## Key Documentation
 
@@ -12,6 +12,10 @@ Read before making changes:
 - `docs/prd.md` — product requirements, state model, protocol
 - `docs/architecture.md` — component design, data flow, technical decisions
 - `docs/extension_prd.md` — VS Code extension features, settings, build
+- `docs/feishu_setup.md` — Feishu long connection and `/bind`
+- `docs/qq_setup.md` — QQ official bot, sandbox, and `/bind`
+- `docs/product-plan.md` — usability work still in progress (`docs/zh/product-plan.md`)
+- `docs/zh/` — Chinese copies of the user-facing and product docs (`README.zh-CN.md` at the repo root)
 - `.cursor/rules/project.mdc` — **comprehensive project conventions** (TypeScript, CDP patterns, DOM extraction, state management, socket.io protocol, client conventions, error handling, file organization, versioning). This is the primary source of coding rules.
 - `.cursor/rules/probe-before-parsing.mdc` — always probe live systems for direct data before building parsing heuristics
 - `.cursor/rules/publish.mdc` — two-repo publishing workflow (dev → public)
@@ -45,12 +49,14 @@ src/server/         Node.js relay server (ESM, strict TypeScript)
   window-monitor.ts Polls all windows in parallel via separate CDP connections
   dom-extractor.ts  Runs inside Cursor's browser context via Runtime.evaluate
   state-manager.ts  EventEmitter — emits state:patch, connection:changed
-  command-executor.ts  Handles commands from web/Telegram clients
+  command-executor.ts  Handles commands from web, Telegram, Feishu, and QQ clients
   relay.ts          Express + socket.io server
   config.ts         Single source for all configuration (reads env vars)
   types.ts          Shared types — import from here, don't redeclare
-  transports/       Telegram bot transport
+  transports/       Chat transports (Telegram, Feishu, QQ)
     telegram/       Grammy-based bot with forum topic auto-creation
+    feishu/         Feishu long-connection bot (private chat → active window)
+    qq/             Official QQ WebSocket bot (passive replies, no full transcript mirror)
 
 src/client/         Vanilla HTML/CSS/JS web client (no build step, served as static)
   app.js            Mobile-first UI, socket.io for real-time updates

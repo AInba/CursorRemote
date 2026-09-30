@@ -1,5 +1,7 @@
 # Pre-Release Smoke Checklist
 
+[中文](zh/smoke-checklist.md)
+
 Run these manual checks after automated tests pass and before publishing a release.
 
 ## Environment
@@ -30,6 +32,22 @@ Run these manual checks after automated tests pass and before publishing a relea
 - [ ] Activity line is deduplicated against matching step-summary
 - [ ] Run command shows command text with Skip/Run inline buttons
 - [ ] Plan block renders with todos and View Plan / Build buttons
+
+## Feishu
+
+- [ ] Setup panel shows a 6-digit `/bind` code after credentials are saved and the relay restarts
+- [ ] Sending `/bind <code>` in a private chat is accepted once; a second send of the same code is rejected
+- [ ] Plain text in that private chat reaches the active Cursor composer
+- [ ] An approval card button runs or skips the matching Cursor action
+- [ ] A group chat that only sends `/bind` does not type into Cursor
+
+## QQ
+
+- [ ] With sandbox on, the gateway reaches ready (no lasting `4914`)
+- [ ] `/bind` from the private chat opened via 扫码聊天 is accepted once
+- [ ] Plain text reaches the active Cursor composer
+- [ ] Within a few minutes of that message, an approval keyboard (or `/do <id>`) runs the action
+- [ ] The chat is not flooded with the full agent transcript; `/status` returns a snapshot
 
 ## Edge Cases
 

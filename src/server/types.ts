@@ -347,6 +347,26 @@ export interface ServerConfig {
   windowTitleQualifier: boolean;
   dataDir: string;
   telegram: TelegramConfig;
+  feishu: FeishuConfig;
+  qq: QqConfig;
+}
+
+export interface FeishuConfig {
+  enabled: boolean;
+  appId: string;
+  appSecret: string;
+  /** Feishu open_ids allowed without scanning a bind code. */
+  preRegisteredUsers: string[];
+}
+
+export interface QqConfig {
+  enabled: boolean;
+  appId: string;
+  appSecret: string;
+  /** QQ user_openid values allowed without a bind code. */
+  preRegisteredUsers: string[];
+  /** Unpublished bots can only connect to the sandbox gateway. */
+  sandbox: boolean;
 }
 
 export interface TelegramConfig {

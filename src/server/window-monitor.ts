@@ -47,6 +47,11 @@ export interface WindowSnapshot {
 
 const CYCLE_INTERVAL_MS = 10000;
 
+function activeTabTitle(tabs: { title: string; isActive: boolean }[]): string {
+  const active = tabs.find(tab => tab.isActive);
+  return active?.title ?? (tabs.length === 1 ? tabs[0].title : '');
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -280,8 +285,9 @@ export class WindowMonitor extends EventEmitter {
       || prev.mode?.current !== snapshot.mode?.current
       || prev.model?.current !== snapshot.model?.current
       || prev.model?.currentId !== snapshot.model?.currentId
-      || messageFingerprint(prev.messages) !== messageFingerprint(snapshot.messages)
-      || elementsSignature(prev.messages) !== elementsSignature(snapshot.messages);
+        || messageFingerprint(prev.messages) !== messageFingerprint(snapshot.messages)
+        || elementsSignature(prev.messages) !== elementsSignature(snapshot.messages)
+        || activeTabTitle(prev.chatTabs) !== activeTabTitle(snapshot.chatTabs);
 
     this.snapshots.set(windowId, snapshot);
 
@@ -401,8 +407,9 @@ export class WindowMonitor extends EventEmitter {
           || prev.mode?.current !== snapshot.mode?.current
           || prev.model?.current !== snapshot.model?.current
           || prev.model?.currentId !== snapshot.model?.currentId
-          || messageFingerprint(prev.messages) !== messageFingerprint(snapshot.messages)
-          || elementsSignature(prev.messages) !== elementsSignature(snapshot.messages);
+        || messageFingerprint(prev.messages) !== messageFingerprint(snapshot.messages)
+        || elementsSignature(prev.messages) !== elementsSignature(snapshot.messages)
+        || activeTabTitle(prev.chatTabs) !== activeTabTitle(snapshot.chatTabs);
 
         this.snapshots.set(win.id, snapshot);
 

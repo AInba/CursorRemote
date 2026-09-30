@@ -6,6 +6,28 @@ Format follows [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Added
+- **Feishu long-connection transport.** A self-built app controls the active Cursor window from a private chat. The relay dials Feishu, so there is no public webhook. Setup panel shows a 60-second `/bind` code. Approvals and plans are cards. See `docs/feishu_setup.md`.
+- **QQ official bot transport.** WebSocket gateway, same private-chat control and `/bind` flow. Approval buttons ride the latest user message; the full transcript is not mirrored. Sandbox mode until the bot is approved. See `docs/qq_setup.md`.
+
+### Changed
+- Feishu and QQ replies name the Cursor window, show agent status in Chinese, and support `/unbind`. Group `/bind` no longer registers a Feishu user. QQ `/status` lists `/do` commands when an approval could not be pushed. Long Feishu text says when it was truncated. The Setup panel shows a bind-code countdown and the Feishu long-connection / QQ sandbox order.
+- The Setup panel shows whether the Cursor debug port is open, and whether the Feishu long connection or QQ gateway is actually connected (`4914` and IP allowlist failures included).
+- The Setup panel follows the editor language. Chinese editors get Chinese labels and `docs/zh/` links for Feishu, QQ, and the install notes.
+- The getting-started walkthrough adds optional Feishu and QQ steps. Each completes when that bot's App ID setting changes.
+- Feishu and QQ private chats can list and switch Cursor windows, chat tabs, and models (`/windows`, `/tabs`, `/model`, or a number or name).
+- Feishu `/history` reads earlier messages from the current window (default 30, up to 80). The live mirror still sends only the recent tail.
+- QQ questionnaire choices and plan actions use the same passive-reply keyboard and `/do` fallback as approvals. Plan: `docs/product-plan.md`.
+- The Setup panel can remove a bound Feishu or QQ account. A running relay drops it immediately; otherwise the local record is deleted for the next start. Allow-list ids still return then.
+- The web client asks you to bring Cursor to the foreground whenever extraction is stale. Empty code blocks say they fill in after Cursor paints the lines.
+- The Setup panel warns when LAN (`0.0.0.0`) is selected and the web password is empty. Anyone on that network could control Cursor.
+- A Telegram topic for a tab that is not in front says it is not the live tab. It updates when that tab is opened. Other open windows still refresh their current tab in the background.
+- The web client explains notification permission before the browser asks, and offers Add to Home Screen after that. Alerts still need the page to stay open.
+- When Feishu rate-limits an edit, the status message says the agent has not stopped. The limited edit is not replaced with a new copy.
+
+### Fixed
+- Removing a bound Feishu or QQ user from the Setup panel works when the relay listens on a Tailscale or custom address. A refused unbind no longer deletes the on-disk record while the running process keeps the user.
+
 ## [0.1.52] - 2026-07-12
 
 ### Fixed

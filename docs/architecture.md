@@ -1,5 +1,7 @@
 # Architecture — CursorRemote
 
+[中文](zh/architecture.md)
+
 ## 1. High-Level Overview
 
 The system has three tiers connected by two protocol bridges:
@@ -201,7 +203,8 @@ The system uses a transport-agnostic architecture. The State Manager emits event
 
 **HTTP**:
 - `GET /` → serves `src/client/` as static files
-- `GET /health` → returns `{ ok, connected, agentStatus, clients, uptime, windows, activeWindowId, mode, model, chatTabCount, pendingApprovalCount, generation }`
+- `GET /health` → returns `{ ok, connected, agentStatus, clients, uptime, windows, activeWindowId, mode, model, chatTabCount, pendingApprovalCount, generation, transports }`. `transports.feishu` and `transports.qq` are `{ state, detail }` (`disabled`, `starting`, `ready`, or `error`). The Setup panel reads this so a saved secret is not shown as a live connection.
+- `POST /local/unbind` with `{ transport, openId }` drops a Feishu or QQ user from the running process. A loopback peer is accepted, and so is a same-machine connection whose source address is the socket's bind address (Tailscale or a custom IP). A LAN client is not. The route is registered before the web password check so the extension can call it. If the relay refuses the call, the Setup panel does not rewrite the auth file.
 
 **socket.io**:
 - On new connection: send `state:full`
@@ -253,6 +256,32 @@ The system uses a transport-agnostic architecture. The State Manager emits event
 **Configuration**: See `TELEGRAM_*` env vars in `docs/prd.md` §8.
 
 Full specification: `docs/telegram_prd.md`. Detailed architecture: `docs/telegram_architecture.md`.
+
+#### Feishu Transport (`transports/feishu/`)
+
+**Responsibility**: Control the active Cursor window from a Feishu private chat. The relay uses `@larksuiteoapi/node-sdk` `createLarkChannel` with `transport: 'websocket'`. Feishu pushes events over that outbound connection, so there is no public webhook.
+
+**Bind**: A 6-digit code expires after 60 seconds and is single-use. The Setup panel shows the code and two QR images (open-bot applink, and the `/bind` command). Allowed `open_id`s are stored in `feishu-auth.json`.
+
+**Routing**: Phase 1 private chats follow `CDPBridge.activeTargetId`. `/bind` in a group does not register the user.
+
+**Outbound**: On `window:update` for the active window, the transport debounces and edits a status message, an approval card, a questionnaire card, and the tail of the transcript. Card taps return immediately; `CommandExecutor` runs afterward so the callback stays inside Feishu's 3-second window.
+
+**Inbound commands**: `/bind`, `/status`, `/mode`, `/help`, and plain text (`sendMessage`).
+
+Setup: `docs/feishu_setup.md`.
+
+#### QQ Transport (`transports/qq/`)
+
+**Responsibility**: Same private-chat control through the official QQ bot WebSocket gateway (`QQBot` access token, intents `1<<25` and `1<<26`). No unofficial protocol and no public webhook.
+
+**Bind**: Same 60-second `/bind` code, written as `qq-bind.json` plus a command QR. The user opens the bot with the console's 扫码聊天 code.
+
+**Outbound**: QQ passive replies must carry the user's latest `msg_id`, and proactive pushes are quota-limited. The transport does not mirror the full transcript. It sends approval keyboards only while that `msg_id` is still inside a 4-minute window. `/status` and `/mode` are passive replies. If markdown keyboards are rejected, the same actions are printed as `/do <id>`.
+
+**Sandbox**: `QQ_SANDBOX=true` uses `https://sandbox.api.sgroup.qq.com`. Gateway close code `4914` means the bot is still sandbox-only. Production may also require the machine's public IP on the bot allowlist.
+
+Setup: `docs/qq_setup.md`. Platform limits: `docs/qq-backlog.md`.
 
 ---
 
@@ -316,6 +345,9 @@ cursor-ide-remote/
 │   ├── initial_prd.md            # Original requirements (preserved)
 │   ├── prd.md                    # Comprehensive PRD (this project's spec)
 │   ├── architecture.md           # This document
+│   ├── feishu_setup.md           # Feishu long-connection setup
+│   ├── qq_setup.md               # QQ official bot setup
+│   ├── qq-backlog.md             # QQ platform limits that still apply
 │   ├── telegram_prd.md           # Telegram module PRD
 │   └── telegram_architecture.md  # Telegram module architecture
 ├── temp/                         # Saved DOM snapshots for analysis
@@ -344,10 +376,21 @@ cursor-ide-remote/
 │   │       │   ├── formatter.ts  # ChatElement → Telegram HTML
 │   │       │   ├── commands.ts   # Bot command handlers
 │   │       │   ├── topic-manager.ts  # Topic ↔ window+tab mapping
-│   │       └── telegram-raw/
-│   │           ├── index.ts      # RawTelegramTransport (no Grammy)
-│   │           ├── raw-api.ts    # fetch-based Telegram API client
-│   │           └── message-tracker.ts  # Element → message ID tracking
+│   │       ├── telegram-raw/
+│   │       │   ├── index.ts      # RawTelegramTransport (no Grammy)
+│   │       │   ├── raw-api.ts    # fetch-based Telegram API client
+│   │       │   └── message-tracker.ts  # Element → message ID tracking
+│   │       ├── feishu/
+│   │       │   ├── index.ts      # Long-connection transport
+│   │       │   ├── formatter.ts  # ChatElement → Feishu text/cards
+│   │       │   ├── inbound.ts    # /bind, /status, /mode, prompts
+│   │       │   ├── actions.ts    # Card callback → CommandExecutor
+│   │       │   └── session-router.ts  # Private chat → active window
+│   │       └── qq/
+│   │           ├── index.ts      # Official gateway transport
+│   │           ├── protocol.ts   # Identify, heartbeat, event parse
+│   │           ├── api.ts        # Access token and C2C send
+│   │           └── inbound.ts    # /bind, /do, prompts
 │   ├── client/
 │   │   ├── index.html            # SPA shell
 │   │   ├── app.js                # Client logic (socket.io, per-type rendering)
@@ -445,7 +488,7 @@ The web client fires native `Notification` API alerts when the browser tab is no
 - Run command prompts (messages with `type: 'run_command'` and actions)
 - Tool-level approvals (messages with `type: 'tool'` and actions, e.g. Fetch allowlisting, Edit accept)
 
-Each notification uses a unique tag per message ID to prevent duplicates. Permission is requested lazily on the first trigger.
+Each notification uses a unique tag per message ID to prevent duplicates. The page explains what the permission is for, and the browser prompt runs only after the user taps Allow. Add to Home Screen is offered after that choice. Alerts still require the page to stay open. A plain HTTP address on the LAN is not a secure context, so the browser will not show either prompt.
 
 ---
 
@@ -484,7 +527,7 @@ Race conditions during simultaneous spawns are handled by catching `EADDRINUSE` 
 | `extension/src/status-bar.ts` | Status bar item with connection state colors |
 | `extension/src/output-channel.ts` | `LogOutputChannel` wrapper with `info`/`warn`/`error` level support |
 | `extension/src/tree-view.ts` | Sidebar TreeDataProvider: server status, Start/Stop buttons, CDP, agent, clients |
-| `extension/src/setup-panel.ts` | WebviewPanel: networking config, password management, Telegram wizard |
+| `extension/src/setup-panel.ts` | WebviewPanel: networking, password, Telegram, Feishu, and QQ wizards |
 
 ### 7.3 Build
 
@@ -521,6 +564,8 @@ These env vars are set by the extension when spawning the server as a child proc
 | `socket.io`        | ^4.8    | Real-time bidirectional communication                |
 | `ws`               | ^8.18   | Raw WebSocket for CDP client                         |
 | `grammy`           | latest  | Telegram Bot API framework (TypeScript)              |
+| `@larksuiteoapi/node-sdk` | ^1.74 | Feishu long-connection client                        |
+| `qrcode`           | ^1.5    | Bind-code QR SVGs for the Setup panel                |
 | `node-html-parser` | latest  | DOM-based HTML parsing for Telegram formatter        |
 | `tsx`              | ^4.19   | Dev: TypeScript execution with watch mode            |
 | `typescript`       | ^5.7    | Type checking and compilation                        |

@@ -8,6 +8,7 @@ import { escapeHtml, formatElement, formatPlanFull, mergeFormattedBlocks, splitM
 import type { PlanBlock } from '../../types.js';
 import { cleanTabTitle } from '../../dom-extractor.js';
 import { normalizeWindowTitle } from './topic-manager.js';
+import { liveTabsFromSnapshots, topicLiveness } from './topic-liveness.js';
 import { tgKeyboard, type BotContext, type TelegramApiClient } from './tg-types.js';
 
 export interface CommandDeps {
@@ -694,6 +695,15 @@ export async function handleStatus(ctx: BotContext, deps: CommandDeps): Promise<
     `Topics: ${deps.topicManager.getAllMappings().length}`,
     `Approvals: ${state.pendingApprovals.length}`,
   ];
+  const threadId = ctx.message?.message_thread_id;
+  const mapping = threadId ? deps.topicManager.resolveThread(threadId) : undefined;
+  if (mapping) {
+    const openWindowIds = new Set(deps.cdpBridge.windows.map(win => win.id));
+    const liveTabs = liveTabsFromSnapshots(deps.windowMonitor.getAllSnapshots().values(), openWindowIds);
+    if (topicLiveness(mapping, liveTabs, openWindowIds) === 'paused') {
+      lines.push('This topic: not the live tab. It updates when you open that tab in Cursor.');
+    }
+  }
   await ctx.reply(lines.join('\n'), { parse_mode: 'HTML' });
 }
 

@@ -7,7 +7,7 @@ import { ServerManager } from './server-manager.js';
 import { LicenseManager } from './license-manager.js';
 import { StatusTreeView } from './tree-view.js';
 import { SetupPanel } from './setup-panel.js';
-import { TELEGRAM_BOT_TOKEN_SECRET_KEY } from './secrets.js';
+import { FEISHU_APP_SECRET_SECRET_KEY, QQ_APP_SECRET_SECRET_KEY, TELEGRAM_BOT_TOKEN_SECRET_KEY } from './secrets.js';
 
 let serverManager: ServerManager | undefined;
 
@@ -31,6 +31,50 @@ async function ensurePassword(): Promise<void> {
       vscode.commands.executeCommand('workbench.action.openSettings', 'cursorRemote.webappPassword');
     }
   });
+}
+
+async function migrateQqAppSecret(
+  context: vscode.ExtensionContext,
+  outputChannel: UnifiedOutputChannel
+): Promise<void> {
+  const config = vscode.workspace.getConfiguration('cursorRemote');
+  const legacy = config.get<string>('qq.appSecret', '');
+  if (!legacy.trim()) return;
+
+  try {
+    await context.secrets.store(QQ_APP_SECRET_SECRET_KEY, legacy);
+    const stored = await context.secrets.get(QQ_APP_SECRET_SECRET_KEY);
+    if (stored === legacy) {
+      await config.update('qq.appSecret', undefined, vscode.ConfigurationTarget.Global);
+      vscode.window.showInformationMessage(
+        'CursorRemote: your QQ app secret was moved to secure storage.'
+      );
+    }
+  } catch (err) {
+    outputChannel.warn(`QQ app secret migration failed: ${err instanceof Error ? err.message : err}`);
+  }
+}
+
+async function migrateFeishuAppSecret(
+  context: vscode.ExtensionContext,
+  outputChannel: UnifiedOutputChannel
+): Promise<void> {
+  const config = vscode.workspace.getConfiguration('cursorRemote');
+  const legacy = config.get<string>('feishu.appSecret', '');
+  if (!legacy.trim()) return;
+
+  try {
+    await context.secrets.store(FEISHU_APP_SECRET_SECRET_KEY, legacy);
+    const stored = await context.secrets.get(FEISHU_APP_SECRET_SECRET_KEY);
+    if (stored === legacy) {
+      await config.update('feishu.appSecret', undefined, vscode.ConfigurationTarget.Global);
+      vscode.window.showInformationMessage(
+        'CursorRemote: your Feishu app secret was moved to secure storage.'
+      );
+    }
+  } catch (err) {
+    outputChannel.warn(`Feishu app secret migration failed: ${err instanceof Error ? err.message : err}`);
+  }
 }
 
 async function migrateTelegramBotToken(
@@ -67,6 +111,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   });
 
   await migrateTelegramBotToken(context, outputChannel);
+  await migrateFeishuAppSecret(context, outputChannel);
+  await migrateQqAppSecret(context, outputChannel);
 
   serverManager = new ServerManager(
     context,

@@ -1,8 +1,10 @@
 # CursorRemote — Product Requirements Document
 
+[中文](zh/prd.md)
+
 ## 1. Overview
 
-CursorRemote is a relay system that lets you monitor and control Cursor IDE's AI agent remotely — from a phone browser or a Telegram group. It connects to a running Cursor instance via the Chrome DevTools Protocol (CDP), extracts the agent chat state as structured data, and streams it to connected clients over a transport-agnostic event system. From a phone or Telegram you can read the conversation, approve or reject tool calls, run or skip shell commands, interact with plan widgets, send new prompts, switch chat tabs, and change agent mode/model — without touching the host machine.
+CursorRemote is a relay system that lets you monitor and control Cursor IDE's AI agent remotely — from a phone browser, a Telegram group, a Feishu private chat, or a QQ private chat. It connects to a running Cursor instance via the Chrome DevTools Protocol (CDP), extracts the agent chat state as structured data, and streams it to connected clients over a transport-agnostic event system. From a phone or one of those chats you can read the conversation, approve or reject tool calls, run or skip shell commands, interact with plan widgets, send new prompts, switch chat tabs, and change agent mode/model — without touching the host machine.
 
 ### 1.1 Problem Statement
 
@@ -14,18 +16,19 @@ Ship a working system that:
 
 - Connects to a locally running Cursor IDE via CDP
 - Extracts the agent chat panel state as structured, typed data — including plan widgets with todo lists and terminal command approval widgets
-- Streams state to connected clients (web browser and Telegram) in real time via a transport-agnostic event system
+- Streams state to connected clients (web browser, Telegram, Feishu, and QQ) via a transport-agnostic event system
 - Lets the remote user approve/reject tool calls, run/skip shell commands, and trigger plan builds
 - Supports chat tab switching, mode selection, and model selection
 - Provides a Telegram bot integration using forum topics (one per project + chat tab) for monitoring and control
-- Runs entirely on the local network (no cloud dependency, except Telegram API)
+- Provides Feishu and QQ official-bot integrations: outbound long connection, `/bind` on this machine, private chat controls the active Cursor window
+- Runs on the local machine (no CursorRemote cloud). Web access stays on your network. Telegram, Feishu, and QQ traffic still transits those platforms.
 
 ### 1.3 Non-Goals
 
 - Authentication or multi-user access control for the web client
 - Persistent chat history or database
 - PWA / offline support
-- Discord or other chat platform integrations (architecture supports it, but not implemented)
+- Discord or other chat platforms beyond Telegram, Feishu, and QQ (the Transport interface can take more)
 
 ---
 
@@ -159,10 +162,12 @@ The State Manager emits `state:patch` and `connection:changed` events. Any numbe
 2. **Calls** Command Executor methods (or CDP Bridge for window switching) for inbound commands
 3. **Manages** its own connection lifecycle and client-specific state
 
-Currently two transports are implemented:
+Currently four transports are implemented:
 
 - **Web Transport** (`relay.ts`): Express static server + socket.io. Forwards state events to browser clients, routes socket.io commands to the executor.
 - **Telegram Transport** (`transports/telegram/`): grammy bot with long polling. Maps state to Telegram messages in forum topics, routes inline keyboard callbacks and text messages to the executor. See `docs/telegram_prd.md` for full specification.
+- **Feishu Transport** (`transports/feishu/`): Feishu Node SDK long connection. Private chat controls the active window. Cards call `CommandExecutor` after an immediate callback ack. See `docs/feishu_setup.md`.
+- **QQ Transport** (`transports/qq/`): Official bot WebSocket gateway. Private chat controls the active window. Approval keyboards are passive replies on the latest `msg_id`. See `docs/qq_setup.md`.
 
 ### 3.1 Data Flow — Observation
 
@@ -550,7 +555,7 @@ An interactive command approval card shown when the agent wants to execute a she
 
 **Telegram**: `formatter.ts` maps composer nodes to `<pre><code>` using structured `codeBlocks` / diff line prefixes where applicable (no Monaco mirror).
 
-**Limitation**: If Cursor has not yet painted editor lines (collapsed widget), `codeBlocks` / `diffBlock` may be empty until a later poll.
+**Limitation**: If Cursor has not yet painted editor lines (collapsed widget), `code` and `diffLines` stay empty until a later poll. The web client keeps the block and says the lines fill in after Cursor paints them.
 
 ---
 
@@ -629,6 +634,25 @@ All configuration is via environment variables with sensible defaults:
 | `TELEGRAM_BOT_TOKEN`     | —        | Bot token from @BotFather (required if enabled)  |
 | `TELEGRAM_ALLOWED_USERS` | —        | Optional: hardcode allowed user IDs (overrides token auth) |
 
+**Feishu Transport**:
+
+| Variable                 | Default  | Description                                      |
+| ------------------------ | -------- | ------------------------------------------------ |
+| `FEISHU_ENABLED`         | `false`  | Enable the Feishu long-connection transport      |
+| `FEISHU_APP_ID`          | —        | Self-built app ID (`cli_xxx`)                    |
+| `FEISHU_APP_SECRET`      | —        | App secret (extension stores this in SecretStorage) |
+| `FEISHU_ALLOWED_USERS`   | —        | Comma-separated open_ids that skip `/bind`       |
+
+**QQ Transport**:
+
+| Variable            | Default  | Description                                           |
+| ------------------- | -------- | ----------------------------------------------------- |
+| `QQ_ENABLED`        | `false`  | Enable the official QQ bot transport                  |
+| `QQ_APP_ID`         | —        | Bot App ID                                            |
+| `QQ_APP_SECRET`     | —        | App secret (extension stores this in SecretStorage)  |
+| `QQ_SANDBOX`        | `false`  | Sandbox gateway until the bot is approved             |
+| `QQ_ALLOWED_USERS`  | —        | Comma-separated `user_openid` values that skip `/bind` |
+
 ---
 
 ## 9. Technical Requirements
@@ -641,6 +665,9 @@ All configuration is via environment variables with sensible defaults:
 - `express` for HTTP static serving
 - `socket.io` for WebSocket with automatic reconnection and transport fallback
 - `grammy` for Telegram Bot API (TypeScript-first, supports Bot API 9.5, forum topics, inline keyboards)
+- `@larksuiteoapi/node-sdk` for the Feishu long connection
+- `ws` for the QQ official gateway (access token and C2C sends use `fetch`)
+- `qrcode` for Setup-panel bind QR codes
 - `node-html-parser` for converting Cursor's complex HTML to Telegram-safe HTML (DOM tree walking)
 - `tsx` for development (TypeScript execution with hot-reload via `tsx watch`)
 
@@ -706,6 +733,8 @@ All configuration is via environment variables with sensible defaults:
 | Native code / diff (web) | Done | `codeBlocks` / `diffBlock` → `.native-code-block`; ~7-line viewport + scroll + full-screen modal; no Monaco HTML mirror |
 | Transport abstraction       | Done        | Transport interface, SendQueue, MessageTracker, WindowMonitor |
 | Telegram transport          | Done        | grammy bot, auto-sync, /register auth, parallel CDP, inline keyboards |
+| Feishu transport            | Done        | Long connection, `/bind`, private chat → active window, approval cards |
+| QQ transport                | Done        | Official WebSocket, `/bind`, passive approval replies; no full transcript mirror |
 | Setup documentation         | Partial     | Needs setup guide for new users               |
 
 ---
@@ -726,18 +755,18 @@ All configuration is via environment variables with sensible defaults:
 | Telegram callback_data 64 byte limit | Can't encode full selector paths | High | Hash-based lookup map for selector paths in callback data |
 | Plan widget DOM changes between Cursor versions | Plan extraction breaks | Medium | Detect by `.composer-create-plan-container` class, fall back to legacy `.plan-execution-message-content` |
 | Run command widget variants (sandbox, allow) | Missing buttons or misclassified | Medium | Detect by `.composer-terminal-tool-call-block-container`, extract all buttons by class pattern |
-| Non-active window/tab state goes stale in Telegram | Topics show outdated info | High | Document limitation; auto-switch on user interaction; future background sweep mode |
+| Non-active tab in Telegram | That topic looks frozen | High | The topic says it is not the live tab and updates when the tab is opened. Other open windows still refresh their current tab over a parallel CDP connection. Hidden tabs are not clicked. |
 
 ---
 
 ## 13. Future Roadmap
 
 - **Discord transport**: Reuse the Transport interface for a Discord bot (threads as topics)
-- **Multi-window background sweep**: Periodically cycle through non-active windows to keep all Telegram topics updated
+- **Hidden Telegram tabs**: Opening non-visible chat tabs would refresh those topics, and would also change the chat Cursor is showing. Current tabs of other open windows already refresh over parallel CDP.
 - **Authentication**: Token-based auth middleware on HTTP and socket.io
 - **Web code UX**: Optional copy-to-clipboard, configurable inline preview height (default ~7 lines)
 - **Auto-approval rules**: Configurable rules like "auto-approve read operations"
-- **PWA**: Service worker + manifest for "Add to Home Screen"
+- **PWA**: Home-screen install is offered after the notification explanation. A service worker passes network requests through and does not cache the live page. Web Push while the browser is closed is still future work.
 - **Push notifications**: Web Push API for alerts when browser is closed
 - **Dynamic model list**: Extract available models from Cursor's DOM instead of hardcoding
 
